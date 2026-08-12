@@ -100,4 +100,4 @@ pinentry-program /usr/bin/pinentry-libsecret --toolkit=auto --fallback-pinentry=
 
 ## License
 
-[MIT License](LICENSE) &copy; 2026 a.key (akeyx)
+[MIT License](LICENSE) &copy; 2026 [a.key](https://github.com/akeyx)
