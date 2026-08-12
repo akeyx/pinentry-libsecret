@@ -7,11 +7,14 @@ and a native Qt GUI dialog with a "Save passphrase in KeePassXC" checkbox.
 import sys
 import re
 import subprocess
+
+# Ensure line-buffered stdout for Assuan IPC
+sys.stdout.reconfigure(line_buffering=True)
+
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
     QLineEdit, QCheckBox, QPushButton
 )
-from PyQt6.QtCore import Qt
 
 def lookup_secret(key_id):
     if not key_id:
@@ -48,7 +51,7 @@ class PinentryDialog(QDialog):
 
     def init_ui(self, desc):
         self.setWindowTitle("Unlock GPG Key")
-        self.setMinimumWidth(440)
+        self.setMinimumWidth(460)
 
         layout = QVBoxLayout()
         layout.setSpacing(12)
@@ -93,7 +96,6 @@ class PinentryDialog(QDialog):
         layout.addLayout(btn_layout)
         self.setLayout(layout)
 
-        # Focus password input
         self.pwd_input.setFocus()
 
     def toggle_show_pwd(self, checked):
@@ -113,6 +115,9 @@ def main():
     sub_key_id = ""
     keygrip = ""
 
+    # Assuan protocol initial greeting
+    sys.stdout.write("OK Pleased to meet you\n")
+
     while True:
         line = sys.stdin.readline()
         if not line:
@@ -127,20 +132,26 @@ def main():
             m_sub = re.search(r'ID[_\s]+([A-Fa-f0-9]{8,40})', desc, re.IGNORECASE)
             if m_sub:
                 sub_key_id = m_sub.group(1)
+            sys.stdout.write("OK\n")
 
         elif line_str.startswith("SETKEYINFO"):
             parts = line_str.split()
             if len(parts) > 1:
                 keygrip = parts[1]
+            sys.stdout.write("OK\n")
 
         elif line_str.startswith("GETPIN"):
             target_key = main_key_id or sub_key_id or keygrip
-            
+
             # 1. Try lookup in KeePassXC silently first
-            cached_pw = lookup_secret(main_key_id) or lookup_secret(sub_key_id) or lookup_secret(keygrip)
+            cached_pw = (
+                lookup_secret(main_key_id) or 
+                lookup_secret(sub_key_id) or 
+                lookup_secret(keygrip) or 
+                lookup_secret("GPG Key")
+            )
             if cached_pw:
                 sys.stdout.write(f"D {cached_pw}\nOK\n")
-                sys.stdout.flush()
                 return
 
             # 2. Launch native PyQt6 GUI dialog
@@ -157,15 +168,15 @@ def main():
                         store_secret(sub_key_id, lbl, pw)
 
                 sys.stdout.write(f"D {pw}\nOK\n")
-                sys.stdout.flush()
                 return
             else:
                 sys.stdout.write("ERR 83886179 Operation cancelled <Pinentry>\n")
-                sys.stdout.flush()
                 sys.exit(1)
+        elif line_str.startswith("BYE"):
+            sys.stdout.write("OK\n")
+            sys.exit(0)
         else:
             sys.stdout.write("OK\n")
-            sys.stdout.flush()
 
 if __name__ == "__main__":
     main()
