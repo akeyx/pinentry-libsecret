@@ -6,12 +6,63 @@ A modern, multi-toolkit `pinentry` wrapper for GnuPG (`gpg-agent`) that seamless
 
 ## Features
 
+- **Automated CI Releases**: Pre-built **`.rpm`** and **`.deb`** packages automatically built and attached to every GitHub Release.
 - **Multi-Toolkit GUI Prompts**: Supports **PyQt6**, **`kdialog`** (KDE), and **`zenity`** (GTK/GNOME).
 - **Environment & CLI Configurable**: Select your preferred GUI toolkit or fallback binary via env vars (`PINENTRY_LIBSECRET_TOOLKIT`) or CLI flags (`--toolkit=...`).
 - **Zero Hardcoded Keys**: Dynamically parses GPG Main Key IDs, Subkey IDs, and Keygrips directly from `gpg-agent` Assuan IPC commands on the fly.
 - **Generic & Unopinionated**: Fully compatible with KeePassXC, KWallet, GNOME Keyring, 1Password, or any `libsecret` D-Bus provider.
 - **Percent-Decoding**: Decodes Assuan percent-encoded strings (`%0A` $\rightarrow$ `\n`, `%22` $\rightarrow$ `"`) for clean, beautifully formatted multi-line GPG prompts.
 - **System Fallback Cascade**: Intelligently falls back to `pinentry-qt`, `pinentry-gnome3`, `pinentry-gtk-2`, `pinentry-gtk`, or `pinentry-curses` if no GUI dialog toolkits are available.
+
+---
+
+## Installation Options
+
+### Option 1: Quick 1-Line Installer (Recommended)
+
+Run this one-liner in your terminal to download, install to `~/.local/bin/`, update `~/.gnupg/gpg-agent.conf`, and reload `gpg-agent`:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/akeyx/pinentry-libsecret/main/install.sh | bash
+```
+
+---
+
+### Option 2: Pre-built `.rpm` or `.deb` Packages
+
+Download the latest `.rpm` or `.deb` package from **[GitHub Releases](https://github.com/akeyx/pinentry-libsecret/releases)**:
+
+#### Fedora / RHEL / SUSE:
+```bash
+sudo dnf install ./pinentry-libsecret-1.0.0-1.noarch.rpm
+```
+
+#### Ubuntu / Debian / Mint:
+```bash
+sudo apt install ./pinentry-libsecret_1.0.0_all.deb
+```
+
+Then configure `~/.gnupg/gpg-agent.conf`:
+```ini
+pinentry-program /usr/bin/pinentry-libsecret
+```
+And reload `gpg-agent`: `gpgconf --kill gpg-agent`.
+
+---
+
+### Option 3: Manual Clone & Symlink
+
+```bash
+git clone https://github.com/akeyx/pinentry-libsecret.git ~/projects/a.key/pinentry-libsecret
+mkdir -p ~/bin
+ln -sf ~/projects/a.key/pinentry-libsecret/pinentry-libsecret ~/bin/pinentry-libsecret
+```
+
+Configure `~/.gnupg/gpg-agent.conf`:
+```ini
+pinentry-program /home/a.key/bin/pinentry-libsecret
+```
+And reload `gpg-agent`: `gpgconf --kill gpg-agent`.
 
 ---
 
@@ -26,58 +77,11 @@ A modern, multi-toolkit `pinentry` wrapper for GnuPG (`gpg-agent`) that seamless
 
 ### CLI Switches (in `gpg-agent.conf`)
 
-You can pass configuration switches directly in `~/.gnupg/gpg-agent.conf`:
+Pass configuration switches directly in `~/.gnupg/gpg-agent.conf`:
 
 ```ini
-pinentry-program /home/a.key/bin/pinentry-libsecret --toolkit=auto --fallback-pinentry=/usr/bin/pinentry-gnome3
+pinentry-program /usr/bin/pinentry-libsecret --toolkit=auto --fallback-pinentry=/usr/bin/pinentry-gnome3
 ```
-
----
-
-## Prerequisites
-
-Only Python 3 and `libsecret` tools are strictly required. PyQt6, `kdialog`, or `zenity` are optional:
-
-### Fedora / RHEL
-```bash
-sudo dnf install -y python3 libsecret python3-pyqt6   # PyQt6 optional
-```
-
-### Ubuntu / Debian
-```bash
-sudo apt update && sudo apt install -y python3 libsecret-tools zenity   # zenity/PyQt6 optional
-```
-
-### Arch Linux
-```bash
-sudo pacman -S python libsecret python-pyqt6   # PyQt6 optional
-```
-
----
-
-## Installation
-
-1. **Clone the Repository:**
-   ```bash
-   git clone https://github.com/akeyx/pinentry-libsecret.git ~/projects/a.key/pinentry-libsecret
-   ```
-
-2. **Create Symlink in your PATH:**
-   ```bash
-   mkdir -p ~/bin
-   ln -sf ~/projects/a.key/pinentry-libsecret/pinentry-libsecret ~/bin/pinentry-libsecret
-   ```
-
-3. **Configure `gpg-agent`:**
-   Edit `~/.gnupg/gpg-agent.conf` and set:
-   ```ini
-   pinentry-program /home/a.key/bin/pinentry-libsecret
-   ```
-
-4. **Reload `gpg-agent`:**
-   ```bash
-   gpgconf --kill gpg-agent
-   ```
 
 ---
 

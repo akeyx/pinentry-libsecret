@@ -1,0 +1,55 @@
+name: Build & Release Packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build RPM & DEB Packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract Tag Version
+        id: vars
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION=${VERSION#v}
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.0.0"; fi
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      - name: Install nFPM
+        run: |
+          echo "Installing nFPM..."
+          curl -sfL https://install.goreleaser.com/github.com/goreleaser/nfpm.sh | sh -s -- -b /tmp v2.35.0
+          sudo mv /tmp/nfpm /usr/local/bin/
+
+      - name: Build Packages with nFPM
+        run: |
+          mkdir -p dist
+          nfpm package --config nfpm.yaml --target dist/pinentry-libsecret_${VERSION}_all.deb
+          nfpm package --config nfpm.yaml --target dist/pinentry-libsecret-${VERSION}-1.noarch.rpm
+          tar -czvf dist/pinentry-libsecret-${VERSION}.tar.gz pinentry-libsecret LICENSE README.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.tar.gz
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
