@@ -1,6 +1,6 @@
-# pinentry-keepassxc
+# pinentry-libsecret
 
-A modern, native Qt (PyQt6) `pinentry` wrapper for GnuPG (`gpg-agent`) that seamlessly integrates with **KeePassXC** (and any Freedesktop.org Secret Service provider), featuring silent passphrase retrieval and a desktop-native GUI fallback dialog with a **"Save in password manager"** checkbox.
+A modern, native Qt (PyQt6) `pinentry` wrapper for GnuPG (`gpg-agent`) that seamlessly integrates with **Freedesktop Secret Service API (`libsecret`)** (KeePassXC, KWallet, GNOME Keyring, 1Password, etc.), featuring silent passphrase retrieval and a desktop-native GUI fallback dialog with a **"Save in password manager"** checkbox.
 
 ---
 
@@ -8,18 +8,18 @@ A modern, native Qt (PyQt6) `pinentry` wrapper for GnuPG (`gpg-agent`) that seam
 
 Standard `pinentry-qt` provided by GnuPG intentionally omits persistent password saving features. On modern Linux desktop environments (such as Fedora KDE Plasma 6), alternative tools like `pinentry-kwallet` are outdated or fail due to D-Bus changes.
 
-`pinentry-keepassxc` solves this by acting as a smart proxy for `gpg-agent` Assuan IPC protocol:
-1. **Silent Unlock**: Automatically queries KeePassXC over D-Bus (`libsecret`). If your GPG key passphrase exists in your unlocked KeePassXC database, operations like `sops`, `gpg`, and `git commit -S` authenticate **instantly without any popups**.
-2. **Native Qt Fallback**: If the key is missing from KeePassXC, it opens a native Qt GUI dialog displaying cleanly formatted multi-line GPG key metadata and a **`[x] Save in password manager`** checkbox.
-3. **Auto-Storage**: Checking the box automatically stores your passphrase in KeePassXC via `secret-tool` under the key's Main ID.
+`pinentry-libsecret` solves this by acting as a smart proxy for `gpg-agent` Assuan IPC protocol:
+1. **Silent Unlock**: Automatically queries your active Secret Service provider over D-Bus (`libsecret`). If your GPG key passphrase exists in your unlocked password manager, operations like `sops`, `gpg`, and `git commit -S` authenticate **instantly without any popups**.
+2. **Native Qt Fallback**: If the key is missing from your password manager, it opens a native Qt GUI dialog displaying cleanly formatted multi-line GPG key metadata and a **`[x] Save in password manager`** checkbox.
+3. **Auto-Storage**: Checking the box automatically stores your passphrase via `secret-tool` under the key's Main ID.
 
 ---
 
 ## Features
 
 - **Zero Hardcoded Keys**: Dynamically parses GPG Main Key IDs, Subkey IDs, and Keygrips directly from `gpg-agent` Assuan IPC commands on the fly.
+- **Generic & Unopinionated**: Fully compatible with KeePassXC, KWallet, GNOME Keyring, 1Password, or any `libsecret` D-Bus provider.
 - **Percent-Decoding**: Decodes Assuan percent-encoded strings (`%0A` $\rightarrow$ `\n`, `%22` $\rightarrow$ `"`) for clean, beautifully formatted multi-line GPG prompts.
-- **Freedesktop Secret Service Integration**: Works out-of-the-box with KeePassXC, KWallet, GNOME Keyring, or any `libsecret`-compatible secret manager.
 - **Single Canonical Entry**: Deduplicates keys by storing exactly 1 canonical entry under the primary Main Key ID.
 
 ---
@@ -49,19 +49,19 @@ sudo pacman -S python-pyqt6 libsecret
 
 1. **Clone the Repository:**
    ```bash
-   git clone https://github.com/akeyx/pinentry-keepassxc.git ~/projects/a.key/pinentry-keepassxc
+   git clone https://github.com/akeyx/pinentry-libsecret.git ~/projects/a.key/pinentry-libsecret
    ```
 
 2. **Create Symlink in your PATH:**
    ```bash
    mkdir -p ~/bin
-   ln -sf ~/projects/a.key/pinentry-keepassxc/pinentry-keepassxc ~/bin/pinentry-keepassxc
+   ln -sf ~/projects/a.key/pinentry-libsecret/pinentry-libsecret ~/bin/pinentry-libsecret
    ```
 
 3. **Configure `gpg-agent`:**
    Edit `~/.gnupg/gpg-agent.conf` and set:
    ```ini
-   pinentry-program /home/a.key/bin/pinentry-keepassxc
+   pinentry-program /home/a.key/bin/pinentry-libsecret
    ```
    *(Replace `/home/a.key` with your user's home directory path if needed).*
 
@@ -69,17 +69,6 @@ sudo pacman -S python-pyqt6 libsecret
    ```bash
    gpgconf --kill gpg-agent
    ```
-
----
-
-## KeePassXC Configuration
-
-To enable KeePassXC to serve and store your GPG passphrases:
-
-1. Open **KeePassXC**.
-2. Go to **Tools** $\rightarrow$ **Settings** $\rightarrow$ **Secret Service Integration**.
-3. Check **Enable Secret Service Integration**.
-4. Select your preferred default database and group for stored secrets.
 
 ---
 
@@ -91,7 +80,7 @@ To enable KeePassXC to serve and store your GPG passphrases:
    ```
 2. The native Qt dialog will pop up requesting your passphrase.
 3. Keep **Save in password manager** checked and click **OK**.
-4. KeePassXC will store the passphrase under attribute `gpg-key = <MAIN_KEY_ID>`.
+4. Your Secret Service provider will store the passphrase under attribute `gpg-key = <MAIN_KEY_ID>`.
 5. On all subsequent runs, `sops` and `gpg` will decrypt **silently with zero prompts**!
 
 ---
@@ -102,7 +91,7 @@ To enable KeePassXC to serve and store your GPG passphrases:
   ```bash
   gpgconf --kill gpg-agent
   ```
-- **Remove saved key from KeePassXC via CLI:**
+- **Remove saved key via CLI:**
   ```bash
   secret-tool clear gpg-key <MAIN_KEY_ID>
   ```
