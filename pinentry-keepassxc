@@ -7,6 +7,7 @@ and a native Qt GUI dialog with a "Save passphrase in KeePassXC" checkbox.
 import sys
 import re
 import subprocess
+import urllib.parse
 
 # Ensure line-buffered stdout for Assuan IPC
 sys.stdout.reconfigure(line_buffering=True)
@@ -51,13 +52,14 @@ class PinentryDialog(QDialog):
 
     def init_ui(self, desc):
         self.setWindowTitle("Unlock GPG Key")
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(480)
 
         layout = QVBoxLayout()
         layout.setSpacing(12)
 
-        # Description
-        desc_label = QLabel(desc or "Please enter your GPG key passphrase:")
+        # Description (Percent-decoded for clean display and multi-line formatting)
+        desc_text = desc or "Please enter your GPG key passphrase:"
+        desc_label = QLabel(desc_text)
         desc_label.setWordWrap(True)
         layout.addWidget(desc_label)
 
@@ -125,7 +127,10 @@ def main():
         line_str = line.strip()
 
         if line_str.startswith("SETDESC"):
-            desc = line_str[7:].strip()
+            raw_desc = line_str[7:].strip()
+            # Decode Assuan percent-encoding (%0A -> \n, %22 -> ", etc.)
+            desc = urllib.parse.unquote(raw_desc)
+            
             m = re.search(r'main[_\s]+key[_\s]+ID[_\s]+([A-Fa-f0-9]+)', desc, re.IGNORECASE)
             if m:
                 main_key_id = m.group(1)
