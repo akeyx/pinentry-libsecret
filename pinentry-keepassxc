@@ -77,7 +77,7 @@ class PinentryDialog(QDialog):
 
         layout.addLayout(pwd_layout)
 
-        # Save in Password Manager Checkbox (Generic phrasing for any libsecret backend)
+        # Save in Password Manager Checkbox
         self.save_cb = QCheckBox("Save in password manager")
         self.save_cb.setChecked(True)
         layout.addWidget(self.save_cb)
@@ -128,7 +128,6 @@ def main():
 
         if line_str.startswith("SETDESC"):
             raw_desc = line_str[7:].strip()
-            # Decode Assuan percent-encoding (%0A -> \n, %22 -> ", etc.)
             desc = urllib.parse.unquote(raw_desc)
             
             m = re.search(r'main[_\s]+key[_\s]+ID[_\s]+([A-Fa-f0-9]+)', desc, re.IGNORECASE)
@@ -146,7 +145,8 @@ def main():
             sys.stdout.write("OK\n")
 
         elif line_str.startswith("GETPIN"):
-            target_key = main_key_id or sub_key_id or keygrip
+            # Single canonical key identifier for the key (Primary = Main Key ID)
+            primary_key = main_key_id or sub_key_id or keygrip
 
             # 1. Try lookup in secret storage silently first
             cached_pw = (
@@ -161,16 +161,13 @@ def main():
 
             # 2. Launch native PyQt6 GUI dialog
             app = QApplication(sys.argv)
-            dialog = PinentryDialog(desc, target_key)
+            dialog = PinentryDialog(desc, primary_key)
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 pw = dialog.passphrase
-                if dialog.save_secret and target_key:
-                    lbl = f"GPG Key ({target_key})"
-                    store_secret(target_key, lbl, pw)
-                    if main_key_id and main_key_id != target_key:
-                        store_secret(main_key_id, lbl, pw)
-                    if sub_key_id and sub_key_id != target_key:
-                        store_secret(sub_key_id, lbl, pw)
+                # Save exactly 1 entry into password manager under the primary Key ID
+                if dialog.save_secret and primary_key:
+                    lbl = f"GPG Key ({primary_key})"
+                    store_secret(primary_key, lbl, pw)
 
                 sys.stdout.write(f"D {pw}\nOK\n")
                 return
