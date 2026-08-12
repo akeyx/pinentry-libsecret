@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Dynamic Pinentry wrapper for KeePassXC (libsecret) with pinentry-qt fallback.
+# Zero hardcoded values: dynamically parses GPG Key IDs and Keygrip from Assuan protocol.
+
+COMMANDS=""
+MAIN_KEY_ID=""
+KEY_ID=""
+KEYGRIP=""
+
+while read -r line; do
+    COMMANDS="${COMMANDS}${line}"$'\n'
+
+    # Dynamically extract main key ID from SETDESC (e.g. main key ID 7C5F3CAE90C10A24)
+    if [[ "$line" =~ main[[:space:]]+key[[:space:]]+ID[[:space:]]+([A-Fa-f0-9]+) ]]; then
+        MAIN_KEY_ID="${BASH_REMATCH[1]}"
+    fi
+
+    # Dynamically extract key ID / subkey ID from SETDESC (e.g. ID D164F105A6BFF471)
+    if [[ "$line" =~ ID[[:space:]]+([A-Fa-f0-9]{8,40}) ]]; then
+        KEY_ID="${BASH_REMATCH[1]}"
+    fi
+
+    # Dynamically extract Keygrip from SETKEYINFO
+    if [[ "$line" =~ ^SETKEYINFO[[:space:]]+([^[:space:]]+) ]]; then
+        KEYGRIP="${BASH_REMATCH[1]}"
+    fi
+
+    # When gpg-agent requests the passphrase
+    if [[ "$line" =~ ^GETPIN ]]; then
+        PASSPHRASE=""
+
+        # 1. Try lookup in KeePassXC by Main GPG Key ID attribute (gpg-key = <MAIN_KEY_ID>)
+        if [[ -n "$MAIN_KEY_ID" ]]; then
+            PASSPHRASE=$(secret-tool lookup gpg-key "$MAIN_KEY_ID" 2>/dev/null)
+        fi
+
+        # 2. Try lookup in KeePassXC by Subkey ID attribute (gpg-key = <KEY_ID>)
+        if [[ -z "$PASSPHRASE" && -n "$KEY_ID" ]]; then
+            PASSPHRASE=$(secret-tool lookup gpg-key "$KEY_ID" 2>/dev/null)
+        fi
+
+        # 3. Try lookup in KeePassXC by Keygrip attribute (keygrip = <KEYGRIP>)
+        if [[ -z "$PASSPHRASE" && -n "$KEYGRIP" ]]; then
+            PASSPHRASE=$(secret-tool lookup keygrip "$KEYGRIP" 2>/dev/null)
+        fi
+
+        # 4. Try lookup in KeePassXC by Entry Title "GPG Key"
+        if [[ -z "$PASSPHRASE" ]]; then
+            PASSPHRASE=$(secret-tool lookup Title "GPG Key" 2>/dev/null)
+        fi
+
+        # 5. If passphrase was found in KeePassXC, send it straight to gpg-agent
+        if [[ -n "$PASSPHRASE" ]]; then
+            echo "D $PASSPHRASE"
+            echo "OK"
+            exit 0
+        fi
+
+        # 6. Fallback: If not found in KeePassXC, open pinentry-qt GUI seamlessly
+        printf "%s" "$COMMANDS" | /usr/bin/pinentry-qt "$@"
+        exec /usr/bin/pinentry-qt "$@"
+    fi
+
+    # Standard handshake response for pre-GETPIN commands
+    echo "OK"
+done
