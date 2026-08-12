@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-pinentry-keepassxc: A native Qt (PyQt6) Pinentry wrapper for GnuPG and KeePassXC.
+pinentry-keepassxc: A native Qt (PyQt6) Pinentry wrapper for GnuPG and Secret Service.
 Provides automatic silent passphrase retrieval via Secret Service (libsecret),
-and a native Qt GUI dialog with a "Save passphrase in KeePassXC" checkbox.
+and a native Qt GUI dialog with a "Save in password manager" checkbox.
 """
 import sys
 import re
@@ -77,8 +77,8 @@ class PinentryDialog(QDialog):
 
         layout.addLayout(pwd_layout)
 
-        # Save to KeePassXC Checkbox
-        self.save_cb = QCheckBox("Save passphrase in KeePassXC")
+        # Save in Password Manager Checkbox (Generic phrasing for any libsecret backend)
+        self.save_cb = QCheckBox("Save in password manager")
         self.save_cb.setChecked(True)
         layout.addWidget(self.save_cb)
 
@@ -148,7 +148,7 @@ def main():
         elif line_str.startswith("GETPIN"):
             target_key = main_key_id or sub_key_id or keygrip
 
-            # 1. Try lookup in KeePassXC silently first
+            # 1. Try lookup in secret storage silently first
             cached_pw = (
                 lookup_secret(main_key_id) or 
                 lookup_secret(sub_key_id) or 
