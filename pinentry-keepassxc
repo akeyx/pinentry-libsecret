@@ -1,66 +1,171 @@
-#!/usr/bin/env bash
-# Dynamic Pinentry wrapper for KeePassXC (libsecret) with pinentry-qt fallback.
-# Zero hardcoded values: dynamically parses GPG Key IDs and Keygrip from Assuan protocol.
+#!/usr/bin/env python3
+"""
+pinentry-keepassxc: A native Qt (PyQt6) Pinentry wrapper for GnuPG and KeePassXC.
+Provides automatic silent passphrase retrieval via Secret Service (libsecret),
+and a native Qt GUI dialog with a "Save passphrase in KeePassXC" checkbox.
+"""
+import sys
+import re
+import subprocess
+from PyQt6.QtWidgets import (
+    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+    QLineEdit, QCheckBox, QPushButton
+)
+from PyQt6.QtCore import Qt
 
-COMMANDS=""
-MAIN_KEY_ID=""
-KEY_ID=""
-KEYGRIP=""
+def lookup_secret(key_id):
+    if not key_id:
+        return None
+    try:
+        res = subprocess.run(
+            ["secret-tool", "lookup", "gpg-key", key_id],
+            capture_output=True, text=True, timeout=2
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+    except Exception:
+        pass
+    return None
 
-while read -r line; do
-    COMMANDS="${COMMANDS}${line}"$'\n'
+def store_secret(key_id, label, passphrase):
+    if not key_id or not passphrase:
+        return
+    try:
+        subprocess.run(
+            ["secret-tool", "store", "--label", label, "gpg-key", key_id],
+            input=passphrase, text=True, timeout=5
+        )
+    except Exception:
+        pass
 
-    # Dynamically extract main key ID from SETDESC (e.g. main key ID 7C5F3CAE90C10A24)
-    if [[ "$line" =~ main[[:space:]]+key[[:space:]]+ID[[:space:]]+([A-Fa-f0-9]+) ]]; then
-        MAIN_KEY_ID="${BASH_REMATCH[1]}"
-    fi
+class PinentryDialog(QDialog):
+    def __init__(self, desc, key_id):
+        super().__init__()
+        self.passphrase = None
+        self.save_secret = False
+        self.key_id = key_id
+        self.init_ui(desc)
 
-    # Dynamically extract key ID / subkey ID from SETDESC (e.g. ID D164F105A6BFF471)
-    if [[ "$line" =~ ID[[:space:]]+([A-Fa-f0-9]{8,40}) ]]; then
-        KEY_ID="${BASH_REMATCH[1]}"
-    fi
+    def init_ui(self, desc):
+        self.setWindowTitle("Unlock GPG Key")
+        self.setMinimumWidth(440)
 
-    # Dynamically extract Keygrip from SETKEYINFO
-    if [[ "$line" =~ ^SETKEYINFO[[:space:]]+([^[:space:]]+) ]]; then
-        KEYGRIP="${BASH_REMATCH[1]}"
-    fi
+        layout = QVBoxLayout()
+        layout.setSpacing(12)
 
-    # When gpg-agent requests the passphrase
-    if [[ "$line" =~ ^GETPIN ]]; then
-        PASSPHRASE=""
+        # Description
+        desc_label = QLabel(desc or "Please enter your GPG key passphrase:")
+        desc_label.setWordWrap(True)
+        layout.addWidget(desc_label)
 
-        # 1. Try lookup in KeePassXC by Main GPG Key ID attribute (gpg-key = <MAIN_KEY_ID>)
-        if [[ -n "$MAIN_KEY_ID" ]]; then
-            PASSPHRASE=$(secret-tool lookup gpg-key "$MAIN_KEY_ID" 2>/dev/null)
-        fi
+        # Password Input Layout
+        pwd_layout = QHBoxLayout()
+        self.pwd_input = QLineEdit()
+        self.pwd_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.pwd_input.setPlaceholderText("Passphrase")
+        pwd_layout.addWidget(self.pwd_input)
 
-        # 2. Try lookup in KeePassXC by Subkey ID attribute (gpg-key = <KEY_ID>)
-        if [[ -z "$PASSPHRASE" && -n "$KEY_ID" ]]; then
-            PASSPHRASE=$(secret-tool lookup gpg-key "$KEY_ID" 2>/dev/null)
-        fi
+        # Show/Hide Password Checkbox
+        self.show_pwd_cb = QCheckBox("Show")
+        self.show_pwd_cb.toggled.connect(self.toggle_show_pwd)
+        pwd_layout.addWidget(self.show_pwd_cb)
 
-        # 3. Try lookup in KeePassXC by Keygrip attribute (keygrip = <KEYGRIP>)
-        if [[ -z "$PASSPHRASE" && -n "$KEYGRIP" ]]; then
-            PASSPHRASE=$(secret-tool lookup keygrip "$KEYGRIP" 2>/dev/null)
-        fi
+        layout.addLayout(pwd_layout)
 
-        # 4. Try lookup in KeePassXC by Entry Title "GPG Key"
-        if [[ -z "$PASSPHRASE" ]]; then
-            PASSPHRASE=$(secret-tool lookup Title "GPG Key" 2>/dev/null)
-        fi
+        # Save to KeePassXC Checkbox
+        self.save_cb = QCheckBox("Save passphrase in KeePassXC")
+        self.save_cb.setChecked(True)
+        layout.addWidget(self.save_cb)
 
-        # 5. If passphrase was found in KeePassXC, send it straight to gpg-agent
-        if [[ -n "$PASSPHRASE" ]]; then
-            echo "D $PASSPHRASE"
-            echo "OK"
-            exit 0
-        fi
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
 
-        # 6. Fallback: If not found in KeePassXC, open pinentry-qt GUI seamlessly
-        printf "%s" "$COMMANDS" | /usr/bin/pinentry-qt "$@"
-        exec /usr/bin/pinentry-qt "$@"
-    fi
+        self.ok_btn = QPushButton("OK")
+        self.ok_btn.setDefault(True)
+        self.ok_btn.clicked.connect(self.on_ok)
+        btn_layout.addWidget(self.ok_btn)
 
-    # Standard handshake response for pre-GETPIN commands
-    echo "OK"
-done
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(self.cancel_btn)
+
+        layout.addLayout(btn_layout)
+        self.setLayout(layout)
+
+        # Focus password input
+        self.pwd_input.setFocus()
+
+    def toggle_show_pwd(self, checked):
+        if checked:
+            self.pwd_input.setEchoMode(QLineEdit.EchoMode.Normal)
+        else:
+            self.pwd_input.setEchoMode(QLineEdit.EchoMode.Password)
+
+    def on_ok(self):
+        self.passphrase = self.pwd_input.text()
+        self.save_secret = self.save_cb.isChecked()
+        self.accept()
+
+def main():
+    desc = ""
+    main_key_id = ""
+    sub_key_id = ""
+    keygrip = ""
+
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            break
+        line_str = line.strip()
+
+        if line_str.startswith("SETDESC"):
+            desc = line_str[7:].strip()
+            m = re.search(r'main[_\s]+key[_\s]+ID[_\s]+([A-Fa-f0-9]+)', desc, re.IGNORECASE)
+            if m:
+                main_key_id = m.group(1)
+            m_sub = re.search(r'ID[_\s]+([A-Fa-f0-9]{8,40})', desc, re.IGNORECASE)
+            if m_sub:
+                sub_key_id = m_sub.group(1)
+
+        elif line_str.startswith("SETKEYINFO"):
+            parts = line_str.split()
+            if len(parts) > 1:
+                keygrip = parts[1]
+
+        elif line_str.startswith("GETPIN"):
+            target_key = main_key_id or sub_key_id or keygrip
+            
+            # 1. Try lookup in KeePassXC silently first
+            cached_pw = lookup_secret(main_key_id) or lookup_secret(sub_key_id) or lookup_secret(keygrip)
+            if cached_pw:
+                sys.stdout.write(f"D {cached_pw}\nOK\n")
+                sys.stdout.flush()
+                return
+
+            # 2. Launch native PyQt6 GUI dialog
+            app = QApplication(sys.argv)
+            dialog = PinentryDialog(desc, target_key)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                pw = dialog.passphrase
+                if dialog.save_secret and target_key:
+                    lbl = f"GPG Key ({target_key})"
+                    store_secret(target_key, lbl, pw)
+                    if main_key_id and main_key_id != target_key:
+                        store_secret(main_key_id, lbl, pw)
+                    if sub_key_id and sub_key_id != target_key:
+                        store_secret(sub_key_id, lbl, pw)
+
+                sys.stdout.write(f"D {pw}\nOK\n")
+                sys.stdout.flush()
+                return
+            else:
+                sys.stdout.write("ERR 83886179 Operation cancelled <Pinentry>\n")
+                sys.stdout.flush()
+                sys.exit(1)
+        else:
+            sys.stdout.write("OK\n")
+            sys.stdout.flush()
+
+if __name__ == "__main__":
+    main()
