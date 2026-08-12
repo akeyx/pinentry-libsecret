@@ -1,46 +1,56 @@
 # pinentry-libsecret
 
-A modern, native Qt (PyQt6) `pinentry` wrapper for GnuPG (`gpg-agent`) that seamlessly integrates with **Freedesktop Secret Service API (`libsecret`)** (KeePassXC, KWallet, GNOME Keyring, 1Password, etc.), featuring silent passphrase retrieval and a desktop-native GUI fallback dialog with a **"Save in password manager"** checkbox.
-
----
-
-## Background & Why This Exists
-
-Standard `pinentry-qt` provided by GnuPG intentionally omits persistent password saving features. On modern Linux desktop environments (such as Fedora KDE Plasma 6), alternative tools like `pinentry-kwallet` are outdated or fail due to D-Bus changes.
-
-`pinentry-libsecret` solves this by acting as a smart proxy for `gpg-agent` Assuan IPC protocol:
-1. **Silent Unlock**: Automatically queries your active Secret Service provider over D-Bus (`libsecret`). If your GPG key passphrase exists in your unlocked password manager, operations like `sops`, `gpg`, and `git commit -S` authenticate **instantly without any popups**.
-2. **Native Qt Fallback**: If the key is missing from your password manager, it opens a native Qt GUI dialog displaying cleanly formatted multi-line GPG key metadata and a **`[x] Save in password manager`** checkbox.
-3. **Auto-Storage**: Checking the box automatically stores your passphrase via `secret-tool` under the key's Main ID.
+A modern, multi-toolkit `pinentry` wrapper for GnuPG (`gpg-agent`) that seamlessly integrates with **Freedesktop Secret Service API (`libsecret`)** (KeePassXC, KWallet, GNOME Keyring, 1Password, etc.), featuring silent passphrase retrieval and desktop-native GUI fallback prompts with a **"Save in password manager"** checkbox.
 
 ---
 
 ## Features
 
+- **Multi-Toolkit GUI Prompts**: Supports **PyQt6**, **`kdialog`** (KDE), and **`zenity`** (GTK/GNOME).
+- **Environment & CLI Configurable**: Select your preferred GUI toolkit or fallback binary via env vars (`PINENTRY_LIBSECRET_TOOLKIT`) or CLI flags (`--toolkit=...`).
 - **Zero Hardcoded Keys**: Dynamically parses GPG Main Key IDs, Subkey IDs, and Keygrips directly from `gpg-agent` Assuan IPC commands on the fly.
 - **Generic & Unopinionated**: Fully compatible with KeePassXC, KWallet, GNOME Keyring, 1Password, or any `libsecret` D-Bus provider.
 - **Percent-Decoding**: Decodes Assuan percent-encoded strings (`%0A` $\rightarrow$ `\n`, `%22` $\rightarrow$ `"`) for clean, beautifully formatted multi-line GPG prompts.
-- **Single Canonical Entry**: Deduplicates keys by storing exactly 1 canonical entry under the primary Main Key ID.
+- **System Fallback Cascade**: Intelligently falls back to `pinentry-qt`, `pinentry-gnome3`, `pinentry-gtk-2`, `pinentry-gtk`, or `pinentry-curses` if no GUI dialog toolkits are available.
+
+---
+
+## Configuration & Switches
+
+### Environment Variables
+
+| Variable | Values | Description |
+| :--- | :--- | :--- |
+| `PINENTRY_LIBSECRET_TOOLKIT` | `auto`, `pyqt`, `kdialog`, `zenity` | Preferred GUI toolkit (`auto` tries PyQt $\rightarrow$ kdialog $\rightarrow$ zenity). |
+| `PINENTRY_LIBSECRET_FALLBACK` | `/path/to/pinentry` | Custom fallback binary if GUI prompts are unavailable. |
+
+### CLI Switches (in `gpg-agent.conf`)
+
+You can pass configuration switches directly in `~/.gnupg/gpg-agent.conf`:
+
+```ini
+pinentry-program /home/a.key/bin/pinentry-libsecret --toolkit=auto --fallback-pinentry=/usr/bin/pinentry-gnome3
+```
 
 ---
 
 ## Prerequisites
 
-Ensure Python 3, PyQt6, and `libsecret-tools` (`secret-tool`) are installed:
+Only Python 3 and `libsecret` tools are strictly required. PyQt6, `kdialog`, or `zenity` are optional:
 
 ### Fedora / RHEL
 ```bash
-sudo dnf install -y python3-pyqt6 libsecret
+sudo dnf install -y python3 libsecret python3-pyqt6   # PyQt6 optional
 ```
 
 ### Ubuntu / Debian
 ```bash
-sudo apt update && sudo apt install -y python3-pyqt6 libsecret-tools
+sudo apt update && sudo apt install -y python3 libsecret-tools zenity   # zenity/PyQt6 optional
 ```
 
 ### Arch Linux
 ```bash
-sudo pacman -S python-pyqt6 libsecret
+sudo pacman -S python libsecret python-pyqt6   # PyQt6 optional
 ```
 
 ---
@@ -63,7 +73,6 @@ sudo pacman -S python-pyqt6 libsecret
    ```ini
    pinentry-program /home/a.key/bin/pinentry-libsecret
    ```
-   *(Replace `/home/a.key` with your user's home directory path if needed).*
 
 4. **Reload `gpg-agent`:**
    ```bash
@@ -78,23 +87,10 @@ sudo pacman -S python-pyqt6 libsecret
    ```bash
    sops secrets.enc.yaml
    ```
-2. The native Qt dialog will pop up requesting your passphrase.
+2. The desktop dialog will pop up requesting your passphrase.
 3. Keep **Save in password manager** checked and click **OK**.
 4. Your Secret Service provider will store the passphrase under attribute `gpg-key = <MAIN_KEY_ID>`.
 5. On all subsequent runs, `sops` and `gpg` will decrypt **silently with zero prompts**!
-
----
-
-## Troubleshooting
-
-- **Clear `gpg-agent` RAM cache:**
-  ```bash
-  gpgconf --kill gpg-agent
-  ```
-- **Remove saved key via CLI:**
-  ```bash
-  secret-tool clear gpg-key <MAIN_KEY_ID>
-  ```
 
 ---
 
